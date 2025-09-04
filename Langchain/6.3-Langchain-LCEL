@@ -1,0 +1,197 @@
+# LangChain Expression Language (LCEL)
+
+This chapter explores **LangChain Expression Language (LCEL)**, the modern framework for building chains in LangChain. LCEL emphasizes **runnables**—composable, serializable components that can be chained using the pipe operator (`|`). We'll contrast the traditional `LLMChain` approach with LCEL, covering serial/parallel execution, `RunnablePassthrough`, and full LCEL capabilities for dynamic pipelines.
+
+LCEL offers flexibility, deprecation of rigid chains, and seamless integration with tools like vector stores for Retrieval-Augmented Generation (RAG).
+
+## Setup
+- **Environment**: Google Colab, `notebooks/07_lcel`.
+- **Install Dependencies**:
+```python
+!pip install langchain langchain-openai langsmith docarray
+
+
+docarray: For parallel processing examples (e.g., vector stores).
+LangSmith: Optional for tracing; enter LangChain API key if using.
+API Keys:
+OpenAI API key (from platform.openai.com).
+
+
+Initialize LLM and Embeddings:
+
+from langchain_openai import ChatOpenAI, OpenAIEmbeddings
+llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
+embeddings = OpenAIEmbeddings()
+
+Traditional Chains: LLMChain (Deprecated)
+The original LLMChain combines a prompt, LLM, and optional output parser but is restrictive (predefined parameters) and deprecated.
+Example
+from langchain_core.prompts import PromptTemplate
+from langchain.chains import LLMChain
+from langchain_core.output_parsers import StrOutputParser
+
+prompt = PromptTemplate.from_template("Give me a small report on {topic}.")
+chain = LLMChain(
+    llm=llm,
+    prompt=prompt,
+    output_parser=StrOutputParser()  # Optional: Parses LLM output
+)
+
+response = chain.invoke({"topic": "retrieval augmented generation"})
+print(response["text"])  # Output: Report on RAG
+
+
+Pros: Simple for basic prompt-LLM flows.
+Cons: Limited customization; fixed structure; deprecated in favor of LCEL.
+
+LCEL: Runnables and Pipe Operator
+LCEL uses runnables—serializable components (prompts, LLMs, parsers) chained via the pipe operator (|). The pipe passes output from one runnable as input to the next.
+Basic LCEL Chain
+Replace LLMChain with LCEL:
+chain = prompt | llm | StrOutputParser()
+response = chain.invoke({"topic": "retrieval augmented generation"})
+print(response)  # Output: Report on RAG (string, not dict)
+
+
+Pipe Operator (|): Chains runnables sequentially (e.g., prompt | llm → LLM receives formatted prompt).
+Invocation: Same as traditional chains but more flexible inputs/outputs.
+
+Under the Hood: Implementing the Pipe Operator
+The pipe is a custom __or__ method on runnables, enabling chaining like runnable1 | runnable2.
+Custom Runnable Implementation
+class Runnable:
+    def __init__(self, func):
+        self.func = func
+    
+    def invoke(self, input):
+        return self.func(input)
+    
+    def __or__(self, other):
+        def chained_func(input):
+            return other.invoke(self.invoke(input))
+        return Runnable(chained_func)
+
+# Example functions
+def add_five(x): return x + 5
+def subtract_five(x): return x - 5
+def multiply_five(x): return x * 5
+
+# Wrap as runnables
+r1 = Runnable(add_five)
+r2 = Runnable(subtract_five)
+r3 = Runnable(multiply_five)
+
+# Chain with __or__ (equivalent to pipe)
+chain = r1 | r2 | r3
+print(chain.invoke(3))  # Output: 15 (3+5=8, 8-5=3, 3*5=15)
+
+# With pipe operator (same result)
+chain_pipe = r1 | r2 | r3
+print(chain_pipe.invoke(3))  # 15
+
+
+Key: __or__ creates a new runnable that sequences execution.
+LangChain's RunnableLambda: Built-in equivalent to custom Runnable for wrapping functions.
+
+Using RunnableLambda
+from langchain_core.runnables import RunnableLambda
+
+# Wrap functions
+r_add = RunnableLambda(add_five)
+r_sub = RunnableLambda(subtract_five)
+r_mult = RunnableLambda(multiply_five)
+
+chain = r_add | r_sub | r_mult
+print(chain.invoke(3))  # 15
+
+
+Multi-Argument Functions: Accept a single dict input (e.g., def func(inputs: dict) -> str: ...) and unpack internally (e.g., x = inputs["x"]).
+
+Advanced Example: Report Generation and Editing
+Chain a prompt-LLM for report generation, then apply editing functions.
+def extract_facts(text: str) -> str:
+    """Remove introduction by splitting on first double newline."""
+    return text.split("\n\n", 1)[1] if "\n\n" in text else text
+
+def replace_word(text: str, old_word: str, new_word: str) -> str:
+    """Replace old_word with new_word in text."""
+    return text.replace(old_word, new_word)
+
+# Wrap as runnables
+r_extract = RunnableLambda(extract_facts)
+r_replace = RunnableLambda(lambda text: replace_word(text, "AI", "Skynet"))
+
+# Full chain
+chain = prompt | llm | StrOutputParser() | r_extract | r_replace
+
+response = chain.invoke({"topic": "artificial intelligence"})
+print(response)
+# Output: Edited report (e.g., "Skynet refers to... narrow skynet, weak skynet...")
+
+
+Note: Simple string ops; in production, use more robust processing (e.g., regex for introductions).
+
+Parallel Execution: RunnableParallel
+RunnableParallel runs multiple runnables concurrently, useful for multi-source RAG (e.g., parallel vector store queries).
+Example: Multi-Vector Store RAG
+Query two vector stores in parallel for context.
+from langchain_community.vectorstores import InMemoryVectorStore  # Or FAISS/Chroma
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.runnables import RunnableParallel, RunnablePassthrough
+from langchain.retrievers import BaseRetriever
+
+# Sample documents
+docs_a = ["Irrelevant info A.", "DeepSeek V3 was released in December 2024."]
+docs_b = ["Irrelevant info B.", "The DeepSeek V3 LLM is a mixture of experts model with 671 billion parameters."]
+
+# Create vector stores
+vectorstore_a = InMemoryVectorStore.from_texts(docs_a, embeddings)
+vectorstore_b = InMemoryVectorStore.from_texts(docs_b, embeddings)
+
+# Convert to retrievers (k=1 for relevant doc)
+retriever_a = vectorstore_a.as_retriever(search_kwargs={"k": 1})
+retriever_b = vectorstore_b.as_retriever(search_kwargs={"k": 1})
+
+# Prompt
+prompt_parallel = ChatPromptTemplate.from_messages([
+    ("system", "Answer based on the following contexts:\nContext A: {context_a}\nContext B: {context_b}"),
+    ("user", "{question}")
+])
+
+# Parallel retrieval
+retrieval_parallel = RunnableParallel({
+    "context_a": retriever_a,
+    "context_b": retriever_b,
+    "question": RunnablePassthrough()  # Passes query unchanged
+})
+
+# Full chain
+chain_parallel = retrieval_parallel | prompt_parallel | llm | StrOutputParser()
+
+# Invoke
+response = chain_parallel.invoke("What architecture does the model DeepSeek released in December use?")
+print(response)
+# Output: "DeepSeek V3 model released in December 2024 is a mixture of experts model with 671 billion parameters."
+
+
+RunnableParallel: Executes dict-mapped runnables in parallel (e.g., two retrievers).
+RunnablePassthrough: Passes input (question) through without modification, enabling parallel ops alongside the query.
+Benefits: Efficient multi-source retrieval; scales to more stores/tools.
+
+Key Insights
+
+Runnables: Serializable, composable units (prompts, LLMs, functions via RunnableLambda).
+Pipe (|): Sequential chaining via __or__; creative but effective.
+Parallelism: RunnableParallel for concurrent execution (e.g., multi-retriever RAG).
+Passthrough: Maintains variables across chains without alteration.
+vs. Traditional Chains: LCEL is flexible, non-deprecated, and supports complex flows (serial/parallel).
+Best Practices:
+Use dict inputs for multi-arg functions.
+Combine with tools/memory for full agents.
+Monitor with LangSmith for debugging.
+
+
+
+Conclusion
+LCEL revolutionizes chain building in LangChain with runnables, pipes, and parallel ops, enabling dynamic, scalable pipelines. From simple prompt-LLM flows to multi-vector RAG, LCEL provides the full capacity for production AI applications. The next chapter builds on this foundation.
+
