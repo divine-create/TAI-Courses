@@ -1,0 +1,16 @@
+In this video, we’ll explore tensors, the fundamental building blocks of linear algebra used extensively in machine learning, including in popular libraries like TensorFlow.
+What Are Tensors?
+
+Tensors are a generalization of scalars, vectors, and matrices to any number of dimensions.
+
+A scalar is a 0-dimensional tensor, representing a single value with magnitude only.
+A vector is a 1-dimensional tensor, a linear array of values.
+A matrix is a 2-dimensional tensor, like a flat table (e.g., a square).
+A 3-dimensional tensor (or 3-tensor) resembles a cube, forming a 3D table.
+Tensors can extend to n-dimensions (e.g., 4-tensor, 12-tensor), though higher dimensions are hard to visualize.
+
+In essence, tensors extend familiar concepts from computer science—scalars, vectors, and matrices—to higher-dimensional structures critical for machine learning.
+
+What’s Next?
+
+In the next section, we’ll dive deeper into scalar tensors and start programming with them using popular machine learning libraries.
