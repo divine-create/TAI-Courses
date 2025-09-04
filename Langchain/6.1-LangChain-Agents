@@ -1,0 +1,222 @@
+# Introduction to Agents in LangChain
+
+This chapter introduces **AI agents** in LangChain, a cornerstone of modern AI applications. Agents enable LLMs to perform complex tasks by integrating tools, maintaining conversational memory, and executing multi-step reasoning. While this is a high-level overview, the next chapter will dive deeper into advanced implementations and LangChain 0.3 features.
+
+Agents represent the "intelligent" core of most AI systems, allowing LLMs to interact with external tools (e.g., web search, calculators) beyond their inherent capabilities.
+
+## Setup
+- **Environment**: Google Colab, `notebooks/05_agents_intro`.
+- **Install Dependencies**:
+```python
+!pip install langchain langchain-openai langsmith google-search-results
+
+
+google-search-results: Enables SERP API for web search tools.
+LangSmith: Optional for tracing; enter your LangChain API key if using.
+API Keys:
+OpenAI API key for the LLM.
+SERP API key (from serpapi.com): Up to 100 free searches/month.
+
+
+Initialize LLM:
+
+from langchain_openai import ChatOpenAI
+llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
+
+Tools: Augmenting LLMs
+Tools extend LLMs by allowing execution of custom code (e.g., functions) to perform actions like calculations or web searches. The LLM decides when and how to use tools, but the agent executor handles actual invocation.
+Best Practices for Tools
+
+Docstring: Natural language description explaining usage (when, why, how).
+Clear Parameter Names: Self-explanatory; explain in docstring if ambiguous.
+Type Annotations: For parameters and return types (e.g., float).
+
+Creating Custom Tools
+Use the @tool decorator from LangChain to convert functions into structured tools.
+from langchain_core.tools import tool
+
+@tool
+def add(x: float, y: float) -> float:
+    """Add two numbers together."""
+    return x + y
+
+@tool
+def multiply(x: float, y: float) -> float:
+    """Multiply two numbers together."""
+    return x * y
+
+@tool
+def exponentiate(base: float, power: float) -> float:
+    """Raise the base to the power."""
+    return base ** power
+
+@tool
+def subtract(x: float, y: float) -> float:
+    """Subtract y from x."""
+    return x - y
+
+
+Structured Tool Inspection:
+
+print(add.name)  # Output: "add"
+print(add.description)  # Output: "Add two numbers together."
+print(add.args_schema.model_json_schema())  # JSON schema with properties, types, required fields
+
+
+Schema includes: Properties (x, y), types (number), required fields (["x", "y"]).
+Optional parameters (e.g., z: float | None = 0.3) appear as optional in the schema.
+
+Tool Execution Flow
+
+LLM generates a JSON string (e.g., {"name": "exponentiate", "arguments": {"base": 2, "power": 3}}).
+Parse to dict: import json; tool_args = json.loads(llm_output).
+Invoke: result = exponentiate.invoke(tool_args["arguments"]) (or via underlying function).
+
+LangChain handles parsing and invocation automatically in agents.
+Pre-Built Tools
+Load ready-made tools like Google Search:
+from langchain_community.tools import load_tools
+search_tools = load_tools(["serpapi"], llm=llm, serpapi_api_key="your_serpapi_key")
+
+Building a Simple Tool-Calling Agent
+Agents combine an LLM, tools, prompt, and memory. Use LangChain Expression Language (LCEL) for composition: prompt | llm | parser.
+Prompt Template
+Includes system instructions, chat history, user query, and agent scratchpad (for intermediate thoughts/tool observations).
+from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+
+prompt = ChatPromptTemplate.from_messages([
+    ("system", "You are a helpful assistant with access to tools."),
+    MessagesPlaceholder("chat_history"),
+    ("user", "{input}"),
+    MessagesPlaceholder("agent_scratchpad")
+])
+
+
+Agent Scratchpad: Stores tool calls, observations, and reasoning steps.
+
+Agent Components
+
+Memory: Use deprecated ConversationBufferMemory for this intro (updated in next chapter).
+
+from langchain.memory import ConversationBufferMemory
+memory = ConversationBufferMemory(return_messages=True)
+
+
+Create Agent (Deprecated; for illustration):
+
+from langchain.agents import create_tool_calling_agent
+
+agent = create_tool_calling_agent(llm, tools=[add, multiply, exponentiate, subtract], prompt=prompt)
+
+
+Agent Executor: Handles the full loop (LLM decisions → tool execution → observations → repeat until final answer).
+
+from langchain.agents import AgentExecutor
+
+agent_executor = AgentExecutor(
+    agent=agent,
+    tools=[add, multiply, exponentiate, subtract],
+    memory=memory,
+    verbose=True  # Shows intermediate steps
+)
+
+Invoking the Agent
+response = agent_executor.invoke({
+    "input": "What is 10.7 multiplied by 7.68?",
+    "chat_history": []
+})
+print(response["output"])  # Output: "10.7 multiplied by 7.68 is approximately 82.18."
+
+
+Verbose Output:
+
+LLM decides: Use multiply tool with {"x": 10.7, "y": 7.68}.
+Tool observation: 82.176.
+LLM final answer: Based on observation.
+
+
+Multi-Tool Example:
+
+
+response = agent_executor.invoke({
+    "input": "Hello, my name is James. Compute (10 + 5) * 2^3 - 7.",
+    "chat_history": []
+})
+print(response["output"])  # Output: Calculation result (e.g., 1 or -3, depending on order).
+
+
+Parallel tool calls: add, multiply, exponentiate run concurrently; subtract follows.
+
+Memory retains name: Subsequent query "What is my name?" → "Your name is James."
+
+Order Sensitivity: Prompting/examples may be needed for correct operation order (e.g., parentheses in math).
+
+
+Real-World Example: Google Search + Custom Tools
+Combine pre-built search with custom tools for location/weather.
+from langchain_community.utilities import SerpAPIWrapper
+from datetime import datetime
+
+@tool
+def get_current_datetime() -> str:
+    """Get the current date and time."""
+    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+@tool
+def get_location_from_ip() -> dict:
+    """Get current location based on IP address."""
+    # In practice, use ipapi.co or similar; example output
+    return {
+        "latitude": 41.2611,
+        "longitude": -95.8608,
+        "city": "Council Bluffs",
+        "country": "United States"
+    }
+
+# Load search tool
+search = SerpAPIWrapper(serpapi_api_key="your_serpapi_key")
+tools = [search.run, get_current_datetime, get_location_from_ip]  # search.run as tool
+
+# Simplified prompt (no history for one-shot)
+prompt_simple = ChatPromptTemplate.from_messages([
+    ("system", "You are a helpful assistant."),
+    ("user", "{input}"),
+    MessagesPlaceholder("agent_scratchpad")
+])
+
+agent_simple = create_tool_calling_agent(llm, tools, prompt_simple)
+agent_executor_simple = AgentExecutor(agent=agent_simple, tools=tools, verbose=True)
+
+response = agent_executor_simple.invoke({
+    "input": "What is the date and time right now? How is the weather where I am? Give degrees in Celsius."
+})
+print(response["output"])
+
+
+Example Output (Based on IP: Council Bluffs, IA, US):
+
+Date/Time: Current (e.g., "2025-09-04 16:36:00").
+Location: Council Bluffs, United States (lat: 41.2611, lon: -95.8608).
+Weather: Fetched via search (e.g., "13°F, partly cloudy, 66% humidity" → Converted to ≈ -10.56°C).
+
+
+Tool Flow:
+
+get_current_datetime: Provides timestamp.
+get_location_from_ip: Gets location.
+search: Queries weather (e.g., "weather Council Bluffs IA").
+Agent converts units and summarizes.
+
+
+
+Key Insights
+
+Agent vs. Executor: Agent (LLM + tools schema); Executor (full loop with execution, memory, intermediates).
+Parallelism: Agents can invoke multiple tools concurrently for efficiency.
+Memory Integration: Retains context across interactions (e.g., name recall).
+Limitations: Deprecated APIs used here; next chapter updates to LCEL/RunnableWithMessageHistory.
+Token/Cost: Tools reduce hallucinations but add execution overhead.
+
+Conclusion
+Agents empower LLMs with tools and reasoning, enabling real-world tasks like calculations and searches. This intro uses simplified (deprecated) components for clarity. The next chapter explores advanced agents, custom implementations, and LangChain 0.3 optimizations.
+Stay tuned for the deep dive!```
