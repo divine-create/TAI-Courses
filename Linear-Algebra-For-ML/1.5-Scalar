@@ -1,0 +1,38 @@
+
+In this video, we’ll dive into scalar tensors, covering their theory, notation, and hands-on coding demos in three popular Python libraries for tensor operations: NumPy, TensorFlow, and PyTorch.
+What Are Scalar Tensors?
+Scalar tensors are 0-dimensional tensors, representing a single numeric value with magnitude only. They are typically denoted in lowercase italics, such as x. In programming libraries, scalars are typed (e.g., integer, 32-bit float) either explicitly or implicitly, like all tensors in machine learning libraries.
+Hands-On Code Demo
+We’ll create scalar tensors in a Jupyter Notebook from the Machine Learning Foundations series, available at github.com/johncrohn/foundations. Navigate to the Intro to Linear Algebra notebook, or use Google Colab for interactive execution. In Colab, clear all outputs (Edit > Clear All Outputs) for a fresh start.
+Jupyter Notebook Overview
+Jupyter Notebooks combine markdown cells (for explanations) and code cells (for executable code). Run code cells with Shift + Enter or the play button.
+Scalar Tensors in Base Python
+
+Create a scalar tensor: x = 25 (a rank-0 tensor, integer type).
+Check its type: type(x) returns int.
+Add another scalar: y = 3, then z = x + y yields 28 (integer).
+Mixing types: Adding an integer (y = 3) to a float (x = 25.0) results in a float (28.0).
+
+Scalar Tensors in PyTorch
+PyTorch tensors are designed to be Pythonic, similar to NumPy arrays, with support for GPU operations and automatic differentiation (covered later in the series).  
+Import PyTorch: import torch (pre-installed in Colab).
+Create a scalar tensor: x = torch.tensor(25) (defaults to integer).
+Check its shape: x.shape returns [] (0-dimensional).
+Documentation: PyTorch Tensor Types.
+Scalar Tensors in TensorFlow
+TensorFlow tensors use wrappers like Variable, Constant, or Placeholder. The Variable method is most common.  
+Import TensorFlow: import tensorflow as tf.
+Create a scalar tensor: xtf = tf.Variable(25, dtype=tf.int16) (specifying 16-bit integer).
+Check its shape: xtf.shape returns [] (0-dimensional).
+Add tensors: ytf = tf.Variable(3, dtype=tf.int16), then ztf = xtf + ytf or tf.add(xtf, ytf) yields 28 (16-bit integer).
+Convert to NumPy: ztf.numpy() returns a NumPy scalar.
+Create a float tensor: xtf_float = tf.Variable(25, dtype=tf.float16) results in a float scalar (25.0).
+Documentation: TensorFlow Tensor Types.
+
+PyTorch vs. TensorFlow
+
+PyTorch: More Pythonic, cleaner stack traces, and easier to use. Ideal for experimentation.
+TensorFlow: Larger community, better production support (e.g., serving models on servers or low-power devices), but less intuitive due to C++ origins and wrapper complexity.
+
+What’s Next?
+In the next section, we’ll explore vector tensors, including how to create them and perform simple operations in NumPy, PyTorch, and TensorFlow.
