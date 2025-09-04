@@ -19,3 +19,375 @@ This capstone chapter integrates concepts from previous chapters (agents, LCEL, 
 ```bash
 git clone https://github.com/Orreellabs/langchain-course.git
 cd langchain-course
+
+
+Install UV (Python Environment Manager):
+Mac: brew install uv
+Windows/Linux: Follow UV docs.
+
+
+Setup Virtual Environment:
+
+uv python install
+uv venv
+source .venv/bin/activate  # Bash/Zsh
+source .venv/bin/activate.fish  # Fish shell
+uv sync  # Install dependencies
+
+
+Environment Variables:
+Create .env file in langchain-course:
+
+
+
+export OPENAI_API_KEY="your_openai_key"  # From platform.openai.com
+export LANGCHAIN_API_KEY="your_langchain_key"  # Optional, for LangSmith
+export SERPAPI_API_KEY="your_serpapi_key"  # From serpapi.com
+
+
+Activate: source .env (or use python-dotenv).
+
+
+Frontend Setup (optional):
+Install Node.js/npm: brew install node npm (Mac) or equivalent.
+Navigate to chapters/09_capstone/app:
+
+
+
+npm install
+npm run dev
+
+
+Runs on localhost:3000.
+
+Backend: FastAPI Implementation
+The API (chapters/09_capstone/api/main.py) handles streaming responses for agent queries.
+API Code
+from fastapi import FastAPI
+from fastapi.responses import StreamingResponse
+import asyncio
+from .agent import agent_executor, QueueCallbackHandler
+
+app = FastAPI()
+
+async def token_generator(query: str, streamer: QueueCallbackHandler):
+    async for token in streamer:
+        if token == "step_end":
+            yield "data: [END_STEP]\n\n"
+        elif isinstance(token, str) and "Tool call" in token:
+            tool_calls = token.additional_kwargs.get("tool_calls", [{}])[0]
+            if tool_name := tool_calls.get("name"):
+                yield f"data: [STEP_NAME]{tool_name}[/STEP_NAME]\n\n"
+            if args := tool_calls.get("arguments", {}):
+                yield f"data: [STEP_ARGS]{args}[/STEP_ARGS]\n\n"
+        elif hasattr(token, "content") and token.content:
+            yield f"data: [CONTENT]{token.content}[/CONTENT]\n\n"
+        else:
+            print(f"Unexpected token: {token}")
+            continue
+        if token == "done":
+            break
+
+@app.post("/invoke")
+async def invoke(content: str):
+    queue = asyncio.Queue()
+    streamer = QueueCallbackHandler(queue)
+    task = asyncio.create_task(
+        agent_executor.stream(content, config={"configurable": {"callbacks": [streamer]}})
+    )
+    return StreamingResponse(
+        token_generator(content, streamer),
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "Transfer-Encoding": "chunked"
+        },
+        media_type="text/event-stream"
+    )
+
+
+Key Components:
+Endpoint: /invoke accepts a query string and returns a streaming response.
+Token Generator: Processes streamed tokens:
+[END_STEP]: Marks end of tool step.
+[STEP_NAME]: Tool name (e.g., serpapi).
+[STEP_ARGS]: Tool arguments (e.g., {"query": "latest news"}).
+[CONTENT]: Final answer text.
+
+
+StreamingResponse: FastAPI's streaming mechanism with text/event-stream media type.
+Async Task: Runs agent_executor.stream concurrently, feeding tokens to QueueCallbackHandler.
+
+
+
+Running the API
+cd chapters/09_capstone/api
+uv run uvicorn main:app --reload
+
+
+Access: localhost:8000/docs for API docs.
+Test endpoint: POST /invoke with {"content": "What is 5 + 5?"}.
+
+Streaming Test (Notebook)
+Test streaming in chapters/09_capstone/streaming_test.ipynb:
+import requests
+
+def stream_response(query: str):
+    with requests.post(
+        "http://localhost:8000/invoke",
+        json={"content": query},
+        stream=True
+    ) as r:
+        for chunk in r.iter_content(chunk_size=None):
+            if chunk:
+                print(chunk.decode(), flush=True)
+
+stream_response("What is 5 + 5?")
+
+
+Output:
+data: [STEP_NAME]add[/STEP_NAME]
+data: [STEP_ARGS]{"x": 5, "y": 5}[/STEP_ARGS]
+data: [END_STEP]
+data: [STEP_NAME]final_answer[/STEP_NAME]
+data: [STEP_ARGS]{"answer": "5 + 5 equals 10", "tools_used": ["add"]}[/STEP_ARGS]
+data: [END_STEP]
+
+
+
+Agent Logic
+The agent (chapters/09_capstone/api/agent.py) extends the deep dive executor with parallel tool calls and async tools.
+Code
+import os
+import asyncio
+from langchain_openai import ChatOpenAI
+from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+from langchain_core.tools import tool
+from langchain_core.messages import AIMessage, ToolMessage, HumanMessage
+from langchain_core.runnables import Runnable
+from pydantic import BaseModel
+import aiohttp
+from typing import List, Dict, Any
+
+# Environment variables
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+SERPAPI_API_KEY = os.getenv("SERPAPI_API_KEY")
+
+# LLM
+llm = ChatOpenAI(
+    model="gpt-4o-mini",
+    temperature=0,
+    streaming=True,
+    openai_api_key=OPENAI_API_KEY
+).configurable_fields(callbacks=...)
+
+# Async SERP API Tool
+class Article(BaseModel):
+    title: str
+    source: str
+    link: str
+    snippet: str
+
+    @classmethod
+    def from_serpapi_result(cls, result: dict):
+        return cls(
+            title=result.get("title", ""),
+            source=result.get("source", ""),
+            link=result.get("link", ""),
+            snippet=result.get("snippet", "")
+        )
+
+@tool
+async def serpapi(query: str) -> List[Article]:
+    """Search the web using SerpAPI."""
+    async with aiohttp.ClientSession() as session:
+        async with session.get(
+            "https://serpapi.com/search",
+            params={"api_key": SERPAPI_API_KEY, "engine": "google", "q": query}
+        ) as response:
+            results = await response.json()
+            return [
+                Article.from_serpapi_result(r)
+                for r in results.get("organic_results", [])[:3]
+            ]
+
+# Other tools (async for consistency)
+@tool
+async def add(x: float, y: float) -> float:
+    """Add two numbers."""
+    return x + y
+
+@tool
+async def multiply(x: float, y: float) -> float:
+    """Multiply two numbers."""
+    return x * y
+
+@tool
+async def exponentiate(base: float, power: float) -> float:
+    """Raise base to power."""
+    return base ** power
+
+@tool
+async def subtract(x: float, y: float) -> float:
+    """Subtract y from x."""
+    return x - y
+
+@tool
+async def final_answer(answer: str, tools_used: List[str]) -> Dict[str, Any]:
+    """Provide final answer with tools used."""
+    return {"answer": answer, "tools_used": tools_used}
+
+tools = [serpapi, add, multiply, exponentiate, subtract, final_answer]
+
+# Prompt
+prompt = ChatPromptTemplate.from_messages([
+    ("system", "You are a helpful assistant. Use provided tools to answer the user's current question, not previous questions. Use final_answer tool to provide the final response."),
+    MessagesPlaceholder("chat_history"),
+    ("user", "{input}"),
+    MessagesPlaceholder("agent_scratchpad")
+])
+
+# Agent
+llm_with_tools = llm.bind_tools(tools, tool_choice="any")
+agent = prompt | llm_with_tools
+
+# Callback Handler (same as streaming chapter)
+class QueueCallbackHandler(...):  # Identical to previous chapter
+
+# Execute Tool
+async def execute_tool(message: AIMessage) -> ToolMessage:
+    tool_call = message.tool_calls[0]
+    tool_name = tool_call["name"]
+    tool_args = tool_call["arguments"]
+    tool_id = tool_call["id"]
+    tool_output = await tools[tool_name].acall(tool_args)
+    return ToolMessage(content=str(tool_output), tool_call_id=tool_id)
+
+# Agent Executor
+class CustomAgentExecutor:
+    def __init__(self, agent: Runnable, tools: List, max_iterations: int = 5):
+        self.agent = agent
+        self.tools = {tool.name: tool for tool in tools}
+        self.max_iterations = max_iterations
+        self.chat_history = []
+    
+    async def stream(self, query: str, config: dict = None):
+        scratchpad = []
+        tools_used = []
+        count = 0
+        output = None
+        found_final_answer = False
+        
+        async for token in self.agent.astream({"input": query, "chat_history": self.chat_history, "agent_scratchpad": scratchpad}, config=config):
+            if output is None or ("id" in token.additional_kwargs.get("tool_calls", [{}])[0]):
+                output = token
+                scratchpad.append(output)
+            else:
+                scratchpad[-1] += token
+        
+        tool_calls = [AIMessage(**tc) for tc in [t.dict() for t in scratchpad if t.tool_calls]]
+        if not tool_calls:
+            return {"answer": output.content, "tools_used": []}
+        
+        tool_obs = await asyncio.gather(*(execute_tool(tc) for tc in tool_calls))
+        scratchpad.extend([tc for pair in zip(tool_calls, tool_obs) for tc in pair])
+        
+        for tc in tool_calls:
+            if tc.tool_calls[0]["name"] == "final_answer":
+                found_final_answer = True
+                final_answer_call = tc.tool_calls[0]["arguments"]
+                final_answer_content = final_answer_call["answer"]
+                break
+        
+        if found_final_answer:
+            self.chat_history.extend([
+                HumanMessage(content=query),
+                AIMessage(content=final_answer_content, additional_kwargs={"tools_used": final_answer_call["tools_used"]})
+            ])
+            return final_answer_call
+        
+        count += 1
+        if count >= self.max_iterations:
+            return {"answer": "No final answer found", "tools_used": tools_used}
+        
+        return await self.stream(query, config)
+
+agent_executor = CustomAgentExecutor(agent, tools)
+
+Key Features
+
+Async Tools:
+All tools (including serpapi, math tools) are async (@tool with async def) for consistency.
+Simplifies execution: await tool.acall(args) vs. mixing tool.invoke and await tool.acall.
+serpapi uses aiohttp for async HTTP requests:
+
+
+
+async with aiohttp.ClientSession() as session:
+    async with session.get(...) as response:
+        results = await response.json()
+
+
+Parallel Tool Calls:
+asyncio.gather(*(execute_tool(tc) for tc in tool_calls)) runs tool calls concurrently.
+Ensures correct order in scratchpad: [AIMessage, ToolMessage, AIMessage, ToolMessage].
+Uses zip to pair tool_calls and tool_obs for correct sequencing.
+
+
+Streaming:
+QueueCallbackHandler (from streaming chapter) pushes tokens to an async queue.
+token_generator formats tokens for frontend (e.g., [STEP_NAME]serpapi[/STEP_NAME]).
+
+
+Conversational:
+chat_history stores HumanMessage and AIMessage for context.
+Prompt ensures focus on current query: "Answer the user's current question, not previous questions."
+
+
+Structured Output:
+final_answer tool returns {"answer": ..., "tools_used": [...]}.
+Frontend parses tools_used for display (e.g., in UI boxes).
+
+
+
+Example Queries
+
+Math Query:
+
+curl -X POST http://localhost:8000/invoke -H "Content-Type: application/json" -d '{"content": "What is 5 + 5?"}'
+
+
+Streamed: [STEP_NAME]add[/STEP_NAME], [STEP_ARGS]{"x": 5, "y": 5}[/STEP_ARGS], [STEP_NAME]final_answer[/STEP_NAME], [STEP_ARGS]{"answer": "5 + 5 equals 10", "tools_used": ["add"]}[/STEP_ARGS].
+
+
+SERP API Query:
+
+curl -X POST http://localhost:8000/invoke -H "Content-Type: application/json" -d '{"content": "Tell me about the latest news in the world"}'
+
+
+Streamed: [STEP_NAME]serpapi[/STEP_NAME], [STEP_ARGS]{"query": "latest world news"}[/STEP_ARGS], citations, and final answer.
+
+
+Parallel Query:
+
+curl -X POST http://localhost:8000/invoke -H "Content-Type: application/json" -d '{"content": "How cold is it in Oslo in Celsius? What is 5 * 5? What do you get when multiplying those?"}'
+
+
+Streamed: Parallel serpapi (Oslo temp), multiply (5*5), then multiply (temp * 25).
+Note: Agent may convert Fahrenheit to Celsius (e.g., (36°F - 32) * 5/9 ≈ 2°C).
+
+Key Insights
+
+Async: Essential for scalability; aiohttp for SERP API, asyncio.gather for parallel tool calls.
+Streaming: Enhances UX with real-time tool usage and answers; uses text/event-stream.
+Parallel Tools: asyncio.gather and ordered scratchpad ensure correct execution.
+Conversational: chat_history enables follow-up questions.
+Extensibility: Add new async tools (e.g., weather APIs, databases) to expand functionality.
+Challenges:
+Async complexity: Ensure await for coroutines, correct scratchpad ordering.
+Agent focus: Prompt engineering prevents answering old queries.
+
+
+
+Conclusion
+This capstone builds a production-ready chat API using LangChain's LCEL, async programming, streaming, and parallel tool execution. The backend powers a responsive frontend, streaming tool calls and answers in real-time. Extend this by adding new tools or enhancing the frontend. This course equips you to build sophisticated AI applications—use this as a foundation for your own projects!```
