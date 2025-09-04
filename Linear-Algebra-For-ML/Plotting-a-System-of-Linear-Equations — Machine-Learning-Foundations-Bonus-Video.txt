@@ -1,0 +1,35 @@
+In the previous video, I mentioned that our next major topic will be tensors. However, before diving into that linear algebra concept, I have two videos with interactive exercises to reinforce the theory we’ve already covered. These exercises are designed to be engaging and enhance comprehension. This video features a hands-on Python code demonstration, while the next video will present a paper-and-pencil mathematical exercise.
+In the last video on “What is Linear Algebra?”, we solved a system of linear equations graphically by sketching a plot. The plot depicted a bank robber traveling at 2.5 kilometers per minute starting at time zero, and a sheriff starting five minutes later at a steeper slope of 3 kilometers per minute. By sketching this on paper (using a ruler or graph paper for precision), we identified the crossover point where the sheriff catches the robber, determining both the time elapsed and the distance traveled.
+Instead of sketching by hand, we can create the same plot programmatically in Python. This video provides a brief example of how to do this, giving you a taste of the hands-on code demonstrations in my Machine Learning Foundations series. You can find hundreds, perhaps thousands, of such demos in the series’ GitHub repository at github.com/johncrone/mlfoundations. We’re currently in the first subject, Introduction to Linear Algebra, where you can access the relevant Jupyter notebook.
+In an upcoming video titled “Scalars,” I’ll explain how to execute code interactively in these Jupyter notebooks using Google Colab, a free environment for running Python code. For now, let’s review static code for this plotting exercise.
+Python Code Demonstration
+For this example, we’ll recreate the plot from the bank robber and sheriff problem using two Python libraries:
+
+NumPy: A numerical computing library.
+Matplotlib: A popular Python library for creating plots.
+
+We start by defining the time range. Since the bank robber starts at time zero and we know from the previous video that the sheriff catches the robber after 30 minutes, we set a time cap of 40 minutes to capture the full scenario. Using NumPy’s linspace method, we generate 1,000 evenly spaced time points from 0 to 40 minutes, stored in a variable t. This provides sufficient detail for a smooth plot.
+Next, we calculate the distances:
+
+For the bank robber, the distance is given by $ D = 2.5 \cdot T $, so we compute 2.5 * t using the time array.
+For the sheriff, accounting for the 5-minute head start, the distance is $ D = 3 \cdot (T - 5) $, which we replicate in code.
+
+With the distances computed, we create the plot using Matplotlib:
+
+Title: “Bank Robber Caught.”
+X-axis label: “Time (minutes).”
+Y-axis label: “Distance (kilometers).”
+Plot boundaries:
+
+X-axis: From 0 to 40 minutes, covering the 30-minute solution with some padding.
+Y-axis: From 0 to 100 kilometers, as we know the crossover occurs at 75 kilometers.
+
+
+Lines: The bank robber’s line is plotted in green with a slope of 2.5, and the sheriff’s line is plotted in brown with a slope of 3, starting at $ T = 5 $.
+Annotations: Vertical and horizontal purple hatched lines mark the crossover point at 30 minutes and 75 kilometers, respectively.
+
+If you didn’t know the solution beforehand, you’d need to experiment with different time and distance ranges to find where the lines intersect. Since we’ve already solved the system algebraically, we can set precise limits (40 minutes and 100 kilometers) to create a clear, visually appealing plot.
+This Python plot replicates the hand-sketched diagram from the previous video with greater precision, illustrating how linear algebra solutions can be visualized programmatically.
+Looking Ahead
+The Machine Learning Foundations series includes many hands-on code demonstrations, most of which are interactive. In the upcoming “Scalars” video, I’ll guide you through executing these Jupyter notebooks in Google Colab. For now, this static code example introduces the type of coding exercises you’ll encounter.
+In the next video, we’ll switch to a paper-and-pencil exercise involving a different problem: solar panels collecting sunlight energy. If you’ve understood the bank robber problem, you’ll find this new exercise straightforward. Stay tuned, and I’ll see you in the next video!
