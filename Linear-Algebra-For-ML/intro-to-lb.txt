@@ -1,0 +1,88 @@
+
+
+Hello, I’m John Crow, and welcome to my Machine Learning Foundations series. This is the first subject in the series: an introduction to linear algebra. This interactive primer covers the theory and practice of tensor manipulation in Python. As a side note, here’s a wonderful illustration of my puppy, Oboe, created by illustrator Hagley Basson.
+
+This introduction to linear algebra is divided into three segments:
+1. Data structures for algebra.
+2. Common tensor operations with hands-on examples.
+3. Matrix properties.
+
+In this video, we begin with Segment 1: Data Structures for Algebra. The topics include:
+- What linear algebra is.
+- A brief history of algebra.
+- Tensors and specific types of tensors, such as scalars and vectors.
+- Simple vector manipulations, like transposition.
+- Characterizing vectors using norms and special types, such as unit vectors and orthogonal vectors.
+- Building vectors in NumPy and other tensor types, including matrices, in TensorFlow and PyTorch, the two most popular automatic differentiation libraries.
+
+This video focuses on defining linear algebra and providing a brief history of algebra. The remaining topics will be covered in future videos.
+
+### What is Linear Algebra?
+
+To understand linear algebra, let’s first define algebra. Algebra is arithmetic that includes non-numerical entities, such as the variable \( x \). For example, consider the equation \( 2x + 5 = 25 \). To solve it, subtract 5 from both sides, resulting in \( 2x = 20 \). Then, divide both sides by 2, yielding \( x = 10 \). You can verify this solution by substituting \( x = 10 \) into the original equation: \( 2 \cdot 10 + 5 = 25 \). This confirms \( x = 10 \) is the only solution.
+
+Linear algebra specifically deals with linear equations, meaning equations without exponential or nonlinear terms. For instance, an equation like \( 2x^2 + 5 = 25 \) involves a squared term, making it nonlinear. Similarly, an equation with a square root is nonlinear. A concise definition of linear algebra is: solving for unknowns within a system of linear equations.
+
+### Systems of Linear Equations
+
+A system of linear equations involves solving for unknowns, like \( x \), across multiple linear equations simultaneously. Consider this example: A sheriff’s car travels at 180 kilometers per hour, while a bank robber’s car travels at 150 kilometers per hour but has a 5-minute head start. How long does it take for the sheriff to catch the robber, and what distance will they have traveled?
+
+For simplicity, assume they travel in a straight line with no acceleration or traffic. To solve this, convert speeds to kilometers per minute: 150 km/h is 2.5 km/min, and 180 km/h is 3 km/min. Graphically, we can plot time (in minutes) on the x-axis and distance (in kilometers) on the y-axis. The bank robber’s distance is represented by a line with a slope of 2.5, starting at the origin. The sheriff’s line has a steeper slope of 3 but starts 5 minutes later, reflecting the head start.
+
+The goal is to find the crossover point where the sheriff catches the robber. Algebraically, represent the bank robber’s distance as \( D = 2.5T \), where \( T \) is time in minutes. For the sheriff, accounting for the 5-minute delay, the distance is \( D = 3(T - 5) \). Since both equations equal \( D \), set them equal: \( 2.5T = 3(T - 5) \).
+
+Expand the right side: \( 2.5T = 3T - 15 \). Subtract \( 3T \) from both sides: \( 2.5T - 3T = -15 \), which simplifies to \( -0.5T = -15 \). Divide by \(-0.5\): \( T = 30 \) minutes. To find the distance, substitute \( T = 30 \) into either equation. For the bank robber: \( D = 2.5 \cdot 30 = 75 \) kilometers. For the sheriff: \( D = 3 \cdot (30 - 5) = 3 \cdot 25 = 75 \) kilometers. Both yield the same distance, confirming the solution.
+
+In linear algebra, a system of equations has one of three outcomes:
+1. **One solution**: The lines intersect at a single point, as in the example.
+2. **No solution**: If the cars travel at the same speed (same slope), they never meet.
+3. **Infinite solutions**: If the cars have the same speed and start time, their paths overlap entirely.
+
+Unlike nonlinear systems, linear equations cannot intersect multiple times.
+
+### Linear Algebra in Machine Learning
+
+Consider a regression model to predict house prices. The price \( Y \) is the outcome, predicted using features like distance to school or number of bedrooms. Suppose there are \( M \) features (e.g., \( M = 12 \)) and a y-intercept to account for the average house price. Each house provides a row of data, with features \( X_{i1}, X_{i2}, \ldots, X_{iM} \) and price \( Y_i \). For \( N \) houses, this forms a system of \( N \) equations with \( M + 1 \) unknowns (the feature weights \( a, b, c, \ldots, m \) and the y-intercept).
+
+In machine learning, such systems can involve thousands of rows (e.g., houses) and dozens of features. In deep learning, like image recognition models, there could be millions of rows (images) and columns (parameters, like pixels). The equation for house \( i \) is:
+
+\[ Y_i = a X_{i1} + b X_{i2} + \cdots + m X_{iM} + \text{y-intercept} \]
+
+The goal is to find the parameters \( a, b, \ldots, m \) that best fit all houses in the dataset.
+
+For a practical example, visit johncrow.com/deeptf1 to see a TensorFlow notebook with a deep neural network. It uses 784-pixel image inputs to predict a 10-class output. The model includes weight matrices and bias vectors, tuned to map inputs to outputs. These are linear algebra data structures: vectors (1D tensors) and matrices (2D tensors). Higher-dimensional tensors, used in convolutional neural networks, enable powerful machine vision models.
+
+### Brief History of Algebra
+
+Algebra’s origins are fascinating. Abu Ja’far Muhammad ibn Musa, known as Al-Khwārizmī (from Khiva, modern Uzbekistan, 780–850 CE), wrote *The Compendious Book on Calculation by Completion and Balancing*. The Arabic word for completion, “al-jabr,” gives us “algebra.” His work formalized symbolic algebra, and his name inspired the term “algorithm.” The medieval Islamic Arab Empire significantly advanced algebra, later refined by Europeans like René Descartes.
+
+Other cultures contributed early:
+- Babylonians developed rhetorical algebra by 1900 BCE.
+- An Egyptian papyrus from 1650 BCE contains linear algebra.
+- Indian mathematicians solved linear equations by the 6th century BCE.
+- Greeks, around 400 BCE, used geometric algebra (e.g., Euclid’s *Elements*).
+- The Chinese solved linear equations in *Nine Chapters on the Mathematical Art* (250 BCE).
+
+Europeans translated Arabic texts in the 12th century, and by the 13th century, their mathematics rivaled other cultures. After the Islamic Empire’s decline in the 15th century, Europeans advanced algebra to its modern form.
+
+### Applications of Linear Algebra
+
+Linear algebra powers modern applications, leveraging computational advancements:
+- **Machine Learning**: Solving for unknowns in algorithms, including deep learning.
+- **Dimensionality Reduction**: Techniques like principal component analysis (PCA).
+- **Web Page Ranking**: Using eigenvectors.
+- **Recommender Systems**: Employing singular value decomposition (SVD).
+- **Natural Language Processing**: Matrix factorization for topic modeling and semantic analysis.
+
+These topics (PCA, SVD, eigenvectors) will be covered in Linear Algebra 2. This course is foundational for:
+- Linear Algebra 2 (matrix operations).
+- Calculus 1 (derivatives) and Calculus 2 (partial derivatives, integrals).
+- Probability, information theory, and statistics.
+- The final optimization course, tying all concepts together for machine learning.
+
+### Next Steps
+
+In the next video, we’ll define tensors and explore their properties in detail. To stay updated, subscribe to my channel, visit johncrow.com to join my email newsletter, or connect with me on LinkedIn (mention you’re a viewer of this series). You can also follow me on Twitter. Thank you for joining this tutorial, and I’ll see you in the next video!
+
+
+If you have specific formatting preferences (e.g., removing timestamps, adding bullet points for equations), let me know, and I can adjust further. Let me know how you’d like to proceed!
