@@ -1,0 +1,362 @@
+# Deep Dive into Agents in LangChain
+
+This chapter provides an in-depth exploration of **AI agents** in LangChain, focusing on their conceptual foundation, the **ReAct** (Reasoning + Action) framework, and building a custom **agent executor**. Unlike the introductory chapter, this dives into the technical details, offering greater control over agent behavior and execution logic, tailored for LangChain 0.3.
+
+Agents are central to intelligent AI applications, enabling LLMs to perform complex, multi-step tasks by reasoning, using tools, and iterating until a solution is reached.
+
+## Conceptual Overview of Agents
+- **What is an Agent?**
+  - Combines an LLM with tools, memory, and execution logic to solve problems iteratively.
+  - Unlike standalone LLMs, agents can interact with external systems (e.g., search, calculations) via tools.
+- **ReAct Framework**:
+  - **Reasoning**: LLM decides the next step (e.g., "I need to search for X").
+  - **Action**: LLM selects a tool and its parameters (e.g., search tool with query "Apple Remote").
+  - **Observation**: Tool executes, returns results (e.g., "Apple Remote controls Front Row").
+  - Iterates until a final answer is reached.
+- **Agent Executor**:
+  - Code logic that orchestrates the ReAct loop: LLM calls → tool execution → observation → repeat.
+  - Manages chat history, intermediate steps, and tool outputs.
+
+### ReAct Example
+**User Query**: "Aside from the Apple Remote, what other device can control the program it was originally designed to interact with?"
+
+1. **Step 1: Reasoning**
+   - LLM: "I need to identify the program the Apple Remote was designed for."
+   - Action: Use search tool with query "Apple Remote."
+   - Observation: "Apple Remote is designed to control Front Row media center."
+
+2. **Step 2: Reasoning**
+   - LLM: "Now I need to find other devices that control Front Row."
+   - Action: Search tool with query "Front Row."
+   - Observation: "Front Row is controlled by Apple Remote or keyboard function keys."
+
+3. **Step 3: Reasoning**
+   - LLM: "I can now answer: keyboard function keys."
+   - Action: Use `final_answer` tool with "keyboard function keys."
+   - Output: "Keyboard function keys."
+
+- **Key**: Multiple LLM calls (reasoning, tool selection) increase latency and token cost but enable complex problem-solving.
+
+## Setup
+- **Environment**: Google Colab, `notebooks/06_agent_executor`.
+- **Install Dependencies**:
+```python
+!pip install langchain langchain-openai langsmith
+
+
+LangSmith: Optional for tracing; enter LangChain API key if using.
+OpenAI API key required for LLM.
+Initialize LLM:
+
+from langchain_openai import ChatOpenAI
+llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)  # Low temp for deterministic tool use
+
+Tools Recap
+Tools are functions wrapped with the @tool decorator to create structured tool objects, enabling LLMs to understand and invoke them.
+from langchain_core.tools import tool
+
+@tool
+def add(x: float, y: float) -> float:
+    """Add two numbers together."""
+    return x + y
+
+@tool
+def multiply(x: float, y: float) -> float:
+    """Multiply two numbers together."""
+    return x * y
+
+@tool
+def exponentiate(base: float, power: float) -> float:
+    """Raise the base to the power."""
+    return base ** power
+
+@tool
+def subtract(x: float, y: float) -> float:
+    """Subtract y from x."""
+    return x - y
+
+
+Structured Tool:
+
+print(add.name)  # "add"
+print(add.description)  # "Add two numbers together."
+print(add.args_schema.model_json_schema())  # Schema: {x: number, y: number, required: [x, y]}
+
+
+Tool Execution:
+LLM outputs JSON: {"name": "add", "arguments": {"x": 10, "y": 10}}.
+LangChain parses and invokes: add.invoke({"x": 10, "y": 10}) → 20.
+
+
+
+Building the Agent
+The agent is the reasoning core (LLM + prompt + tools), while the executor manages the full ReAct loop.
+Prompt Template
+from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+
+prompt = ChatPromptTemplate.from_messages([
+    ("system", "You are a helpful assistant. Use provided tools to answer. After using a tool, its output will be in the scratchpad below. If the answer is in the scratchpad, do not use more tools; return the answer directly."),
+    MessagesPlaceholder("chat_history"),
+    ("user", "{input}"),
+    MessagesPlaceholder("agent_scratchpad")
+])
+
+
+Components:
+System: Guides LLM behavior and tool usage.
+Chat History: Retains prior interactions.
+User Input: Current query.
+Agent Scratchpad: Stores tool calls (assistant messages) and observations (tool messages).
+
+
+
+Binding Tools to LLM
+tools = [add, multiply, exponentiate, subtract]
+llm_with_tools = llm.bind_tools(tools, tool_choice="any")  # Forces tool use
+
+
+Tool Choice:
+any (or required): Forces LLM to select a tool, preventing direct content response.
+auto: Allows LLM to choose between tool use or direct answer.
+
+
+
+Agent Runnable
+agent = prompt | llm_with_tools
+
+
+Invokes LLM with prompt, chat history, input, and scratchpad.
+Outputs assistant message with tool call (e.g., {"name": "add", "arguments": {"x": 10, "y": 10}}).
+
+Manual Execution Example
+import json
+
+# Invoke agent
+response = agent.invoke({
+    "input": "What is 10 + 10?",
+    "chat_history": [],
+    "agent_scratchpad": []
+})
+# Output: AssistantMessage with tool_calls=[{"name": "add", "arguments": {"x": 10, "y": 10}, "id": "call_123"}]
+
+# Map tool name to function
+name_to_tool = {tool.name: tool for tool in tools}
+tool_name = response.tool_calls[0]["name"]
+tool_args = response.tool_calls[0]["arguments"]
+tool_id = response.tool_calls[0]["id"]
+
+# Execute tool
+tool_output = name_to_tool[tool_name].invoke(tool_args)  # 20
+
+# Create tool message
+from langchain_core.messages import ToolMessage
+tool_message = ToolMessage(content=str(tool_output), tool_call_id=tool_id)
+
+# Update scratchpad
+scratchpad = [response, tool_message]
+
+# Re-invoke agent
+response = agent.invoke({
+    "input": "What is 10 + 10?",
+    "chat_history": [],
+    "agent_scratchpad": scratchpad
+})
+# Output: Empty content (due to tool_choice="any"), but tool_calls may include "final_answer"
+
+
+Issue with tool_choice="any":
+Forces tool use, so LLM cannot directly answer even with scratchpad data.
+Solution: Add a final_answer tool.
+
+
+
+Option 1: Tool Choice = Auto
+Allow LLM to answer directly or use tools.
+llm_with_tools = llm.bind_tools(tools, tool_choice="auto")
+agent = prompt | llm_with_tools
+
+# First invocation (no scratchpad)
+response = agent.invoke({
+    "input": "What is 10 + 10?",
+    "chat_history": [],
+    "agent_scratchpad": []
+})  # Tool call: add(10, 10)
+
+# Execute tool, update scratchpad
+tool_output = name_to_tool[response.tool_calls[0]["name"]].invoke(response.tool_calls[0]["arguments"])
+scratchpad = [response, ToolMessage(content=str(tool_output), tool_call_id=response.tool_calls[0]["id"])]
+
+# Second invocation
+response = agent.invoke({
+    "input": "What is 10 + 10?",
+    "chat_history": [],
+    "agent_scratchpad": scratchpad
+})
+# Output: AssistantMessage(content="10 + 10 equals 20")
+
+
+Pros: Simplifies logic; LLM decides when to answer.
+Cons: Smaller models may favor content over tools incorrectly.
+
+Option 2: Final Answer Tool (Preferred)
+Force tool use with a dedicated final_answer tool for structured output.
+@tool
+def final_answer(answer: str, tools_used: list[str]) -> dict:
+    """Provide the final answer to the user's query with tools used.
+    
+    Args:
+        answer: The final answer to the query.
+        tools_used: List of tool names used to compute the answer.
+    """
+    return {"answer": answer, "tools_used": tools_used}
+
+tools = [add, multiply, exponentiate, subtract, final_answer]
+llm_with_tools = llm.bind_tools(tools, tool_choice="any")
+agent = prompt | llm_with_tools
+
+# First invocation
+response = agent.invoke({
+    "input": "What is 10 + 10?",
+    "chat_history": [],
+    "agent_scratchpad": []
+})  # Tool call: add(10, 10)
+
+# Execute tool
+tool_output = name_to_tool[response.tool_calls[0]["name"]].invoke(response.tool_calls[0]["arguments"])
+scratchpad = [response, ToolMessage(content=str(tool_output), tool_call_id=response.tool_calls[0]["id"])]
+
+# Second invocation
+response = agent.invoke({
+    "input": "What is 10 + 10?",
+    "chat_history": [],
+    "agent_scratchpad": scratchpad
+})  # Tool call: final_answer(answer="10 + 10 equals 20", tools_used=["add"])
+
+
+Output:
+
+final_output = name_to_tool[response.tool_calls[0]["name"]].invoke(response.tool_calls[0]["arguments"])
+# {"answer": "10 + 10 equals 20", "tools_used": ["add"]}
+
+
+Pros:
+Enforces tool use, reducing errors from direct content responses.
+Structured output (e.g., {"answer": ..., "tools_used": ...}) for downstream processing.
+
+
+Cons: Requires explicit final_answer tool definition.
+
+Custom Agent Executor
+Abstract the ReAct loop into a reusable class to handle iterations, tool execution, and history.
+from langchain_core.messages import AIMessage, ToolMessage, HumanMessage
+from typing import List, Dict, Any
+
+class CustomAgentExecutor:
+    def __init__(self, llm, tools, prompt, max_iterations: int = 3):
+        self.llm = llm
+        self.tools = tools
+        self.prompt = prompt
+        self.max_iterations = max_iterations
+        self.chat_history = []
+        self.name_to_tool = {tool.name: tool for tool in tools}
+        self.agent = prompt | llm.bind_tools(tools, tool_choice="any")
+    
+    def invoke(self, input: str) -> Dict[str, Any]:
+        scratchpad = []
+        count = 0
+        tools_used = []
+        
+        while count < self.max_iterations:
+            response = self.agent.invoke({
+                "input": input,
+                "chat_history": self.chat_history,
+                "agent_scratchpad": scratchpad
+            })
+            scratchpad.append(response)
+            
+            if not response.tool_calls:
+                break  # No tool calls; exit (unlikely with tool_choice="any")
+            
+            tool_call = response.tool_calls[0]
+            tool_name = tool_call["name"]
+            tool_args = tool_call["arguments"]
+            tool_id = tool_call["id"]
+            
+            # Execute tool
+            tool_output = self.name_to_tool[tool_name].invoke(tool_args)
+            print(f"Tool {tool_name} output: {tool_output}")
+            tools_used.append(tool_name)
+            
+            # Create tool message
+            tool_message = ToolMessage(content=str(tool_output), tool_call_id=tool_id)
+            scratchpad.append(tool_message)
+            
+            if tool_name == "final_answer":
+                final_output = tool_output
+                self.chat_history.extend([
+                    HumanMessage(content=input),
+                    AIMessage(content=final_output["answer"], additional_kwargs={
+                        "tools_used": final_output["tools_used"]
+                    })
+                ])
+                return final_output
+            
+            count += 1
+        
+        return {"answer": "Max iterations reached", "tools_used": tools_used}
+
+# Initialize and invoke
+executor = CustomAgentExecutor(llm=llm, tools=[add, multiply, exponentiate, subtract, final_answer], prompt=prompt)
+response = executor.invoke("What is 10 + 10?")
+print(response)  # {"answer": "10 + 10 equals 20", "tools_used": ["add"]}
+
+Handling Complex Queries
+response = executor.invoke("What is (7.4 * 2) ^ 2 + 5?")
+# Steps:
+# 1. Tool call: multiply(7.4, 2) → 14.8
+# 2. Tool call: exponentiate(14.8, 2) → 219.04
+# 3. Tool call: add(219.04, 5) → 224.04
+# 4. Tool call: final_answer("224.04", ["multiply", "exponentiate", "add"])
+print(response)  # {"answer": "224.04", "tools_used": ["multiply", "exponentiate", "add"]}
+
+
+Parallel Tool Calls: Current logic assumes sequential calls. For parallel execution (supported by OpenAI), loop over response.tool_calls:
+
+for tool_call in response.tool_calls:
+    tool_name = tool_call["name"]
+    tool_args = tool_call["arguments"]
+    tool_id = tool_call["id"]
+    tool_output = self.name_to_tool[tool_name].invoke(tool_args)
+    scratchpad.append(ToolMessage(content=str(tool_output), tool_call_id=tool_id))
+
+Safety Mechanism
+
+Max Iterations: Limits loop to prevent infinite runs (e.g., misconfigured logic).
+Default: 3 iterations.
+If exceeded, returns {"answer": "Max iterations reached", "tools_used": [...]}.
+Note: Current logic lacks robust fallback for incomplete answers; consider adding default response.
+
+
+
+Key Insights
+
+ReAct Loop: Reasoning → Action → Observation, iterated until final answer.
+Agent vs. Executor:
+Agent: LLM + prompt + tool schemas for decision-making.
+Executor: Manages full loop, including tool execution and history.
+
+
+Tool Choice:
+auto: Flexible but less predictable with smaller models.
+any + final_answer: Enforces structured output, ideal for production.
+
+
+Control: Custom executor provides fine-grained control for real-world applications.
+Challenges:
+Parallel tool calls require additional logic.
+Max iterations may need fallback for incomplete answers.
+
+
+
+Conclusion
+This deep dive built a custom ReAct-based agent executor in LangChain, offering greater control than the abstracted AgentExecutor. By understanding the reasoning-action-observation loop and implementing structured tools (especially final_answer), we ensure reliable, production-ready agents. Future chapters may explore advanced optimizations or additional agent patterns.
