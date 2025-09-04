@@ -1,0 +1,96 @@
+Getting Started with LangChain
+In this chapter, we’ll introduce LangChain by building a simple LLM-powered assistant that generates text, images, and structured outputs. We’ll focus on the setup and workflow, keeping code details light for now.
+Overview
+We’ll create an assistant using LangChain to:
+
+Generate an article title, description, and SEO-friendly description.
+Provide feedback and rewrite a paragraph.
+Generate a thumbnail image for an article.
+
+The code is available in the course repository at [github.com/johncrohn/langchain-course](https://github
+.com/johncrohn/langchain-course). You can run it locally or in Google Colab (recommended for simplicity).
+Setting Up Locally
+To run locally:
+
+Install UV (a Python package manager) using the command in the repo’s README (varies by OS; see UV installation guide).
+Clone the repo: git clone https://github.com/johncrohn/langchain-course.
+Navigate to the repo directory and run:
+uv python install 3.12.7 (installs Python 3.12.7).
+uv venv (creates a virtual environment).
+uv sync (installs dependencies from pyproject.toml).
+
+
+Open the notebook in VS Code or Cursor, select the Python environment (venv/bin/python), and run the cells (skip Colab-specific installation cells).
+
+Running in Google Colab
+
+Access the notebook in the repo and click the Colab button, or copy the notebook URL, go to Colab, select GitHub, and paste the URL.
+Install prerequisites: langchain, langchain-core, langchain-openai, and langchain-community.
+
+Initializing the LLM
+We’ll use GPT-4o-mini (a fast, cost-effective OpenAI model):
+
+Get an API key from platform.openai.com (Settings > Organization > API Keys > Create New Secret Key).
+In Colab, paste the key into the notebook’s input box or set it directly in the code.
+Initialize two LLMs:
+Standard LLM: temperature=0 (deterministic, selects the most likely token).
+Creative LLM: temperature=0.9 (more random, creative outputs).
+
+
+
+Building the Assistant
+We’ll use an article draft from the Aurelio learning page to generate content.
+Prompt Templates
+LangChain provides utilities for prompts, split into:
+
+System Prompt: Defines the LLM’s role and objectives (e.g., “You are an AI that generates article titles”).
+User Prompt: User input or templated input (e.g., inserting the article text into a predefined template).
+AI Prompt: LLM-generated responses (optional for pre-populating conversational patterns).
+
+Example:
+
+System Prompt: “You are an AI assistant that helps generate article titles.”
+User Prompt Template: “Generate a title for this article: {article}.”
+Use prompt.format(article="text") to insert the article into the template.
+
+Generating an Article Title
+
+Create a ChatPromptTemplate combining system and user prompts.
+Chain it with the creative LLM using the pipe operator (|) to format the prompt, send it to OpenAI, and extract the response.
+Example output: {"article_title": "Unlocking the Future: The Rise of Neurosymbolic AI Agents"}.
+
+Generating an SEO-Friendly Description
+
+Update the system prompt: “You are an AI assistant that helps build good articles.”
+User prompt: “Create an SEO-friendly description (max 120 characters) for this article: {article}. Title: {article_title}. Do not output anything else.”
+Chain with the LLM and invoke with the article and title as inputs.
+Example output: {"description": "Explore neurosymbolic AI agents' potential in advancing AI."}.
+
+Structured Output for Paragraph Feedback
+
+Define a Pydantic model to enforce structured output (e.g., original_paragraph, edited_paragraph, feedback as strings).
+Use the creative LLM with with_structured_output to force a dictionary output.
+Example:
+Input: Article paragraph.
+Output: {"original_paragraph": "...", "edited_paragraph": "...", "feedback": "Improve clarity by replacing 'was becoming clear' with 'became evident'."}.
+
+
+Note: If feedback is set to int, the LLM outputs a number (e.g., 3), showing how tool calls enforce structure.
+
+Generating a Thumbnail Image
+
+Create a prompt to generate an image description: “Generate a prompt (<500 characters) to create an image based on this article: {article}.”
+Chain it with the LLM to produce a text prompt (e.g., “Create an image of a futuristic interface with neural networks, gears, and connections”).
+Pass the prompt to a function wrapped in RunnableLambda, which uses LangChain’s DALL·E API wrapper to generate an image via OpenAI.
+Display the image using skimage to fetch and render the URL.
+Note: DALL·E’s output may be suboptimal compared to models like MidJourney, but the prompt is reusable.
+
+Key Concepts
+
+Chains: Combine prompt formatting, LLM generation, and output processing.
+RunnableLambda: Wraps custom functions for use in LangChain chains.
+Structured Output: Enforces specific output formats using Pydantic.
+Prompt Templates: Simplify dynamic input insertion and chat history management.
+
+What’s Next?
+This chapter introduced LangChain’s workflow for building an LLM-powered assistant. Future chapters will dive deeper into syntax, chains, and advanced features like LCEL.
