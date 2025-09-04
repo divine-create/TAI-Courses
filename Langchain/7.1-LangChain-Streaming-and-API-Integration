@@ -1,0 +1,343 @@
+# Streaming and Async in LangChain
+
+This chapter explores **streaming** and **asynchronous (async)** programming in LangChain, critical for scalable, responsive conversational AI interfaces. Streaming delivers tokens or intermediate steps (e.g., tool calls) in real-time, enhancing user experience, while async code prevents blocking during API calls, improving performance and scalability.
+
+## Why Streaming and Async?
+- **Async**:
+  - Synchronous code blocks execution during API calls (e.g., LLM requests), reducing scalability.
+  - Async allows concurrent tasks, critical for APIs handling multiple requests or waiting on external services.
+- **Streaming**:
+  - LLMs generate tokens sequentially; streaming delivers them one-by-one for real-time feedback.
+  - Beyond text, streaming includes intermediate steps (e.g., tool calls in agents), enhancing transparency.
+  - Improves UX: Users see progress (e.g., "searching the web") instead of waiting with a blank screen or spinner.
+  - Example: In ChatGPT, streaming shows tool usage (e.g., "Searching the web") alongside text output.
+
+## Setup
+- **Environment**: Google Colab, `notebooks/08_streaming_async`.
+- **Install Dependencies**:
+```python
+!pip install langchain langchain-openai langsmith
+
+
+LangSmith: Optional for tracing; enter LangChain API key if using.
+OpenAI API key (from platform.openai.com).
+Initialize LLM:
+
+from langchain_openai import ChatOpenAI
+llm = ChatOpenAI(model="gpt-4o-mini", temperature=0, streaming=True)  # Enable streaming
+
+Streaming LLM Output
+Streaming delivers tokens as they are generated, ideal for chat interfaces.
+Basic Streaming
+async def stream_llm():
+    tokens = []
+    async for chunk in llm.astream("What is NLP?"):
+        tokens.append(chunk)
+        print(chunk.content + "|", flush=True)  # Flush forces immediate console update
+    return tokens
+
+# Run in Colab
+import asyncio
+tokens = asyncio.run(stream_llm())
+
+
+Output: Tokens stream word-by-word (e.g., N|LP|SANS|...|sentiment|...).
+Subword tokens possible (e.g., sentiment may split).
+flush=True: Ensures immediate console updates for smooth streaming.
+
+
+Token Objects: Each is an AIMessageChunk with content (e.g., N, LP) and metadata.
+Combine chunks: sum(tokens, AIMessageChunk(content="")) merges content (e.g., NLP...).
+
+
+
+Combining Chunks
+combined = sum(tokens[1:], tokens[0])
+print(combined.content)  # Full response: "NLP stands for..."
+
+
+Caution: Ensure correct order to avoid "token salad."
+
+Streaming with Agents
+Agents involve multiple LLM calls and tool executions, making streaming complex but valuable for transparency (e.g., showing tool usage).
+Agent Setup
+Rebuild the agent executor from the deep dive chapter, using LCEL for streaming/async support.
+from langchain_core.tools import tool
+from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+from langchain_core.runnables import Runnable
+from langchain.agents import AgentExecutor, create_tool_calling_agent
+
+# Tools
+@tool
+def add(x: float, y: float) -> float:
+    """Add two numbers."""
+    return x + y
+
+@tool
+def multiply(x: float, y: float) -> float:
+    """Multiply two numbers."""
+    return x * y
+
+@tool
+def exponentiate(base: float, power: float) -> float:
+    """Raise base to power."""
+    return base ** power
+
+@tool
+def subtract(x: float, y: float) -> float:
+    """Subtract y from x."""
+    return x - y
+
+@tool
+def final_answer(answer: str, tools_used: list[str]) -> dict:
+    """Provide final answer with tools used."""
+    return {"answer": answer, "tools_used": tools_used}
+
+tools = [add, multiply, exponentiate, subtract, final_answer]
+
+# Prompt
+prompt = ChatPromptTemplate.from_messages([
+    ("system", "You are a helpful assistant. Use tools to answer. After using a tool, its output is in the scratchpad. If the answer is in the scratchpad, use final_answer tool."),
+    MessagesPlaceholder("chat_history"),
+    ("user", "{input}"),
+    MessagesPlaceholder("agent_scratchpad")
+])
+
+# Agent
+llm_with_tools = llm.bind_tools(tools, tool_choice="any")
+agent = prompt | llm_with_tools
+
+# Custom Agent Executor
+class CustomAgentExecutor:
+    def __init__(self, agent: Runnable, tools, max_iterations: int = 3):
+        self.agent = agent
+        self.tools = tools
+        self.max_iterations = max_iterations
+        self.name_to_tool = {tool.name: tool for tool in tools}
+        self.chat_history = []
+    
+    async def invoke(self, input: str, config: dict = None):
+        scratchpad = []
+        tools_used = []
+        count = 0
+        while count < self.max_iterations:
+            response = await self.agent.ainvoke({
+                "input": input,
+                "chat_history": self.chat_history,
+                "agent_scratchpad": scratchpad
+            }, config=config)
+            scratchpad.append(response)
+            
+            if not response.tool_calls:
+                break
+            
+            tool_call = response.tool_calls[0]
+            tool_name = tool_call["name"]
+            tool_args = tool_call["arguments"]
+            tool_id = tool_call["id"]
+            
+            tool_output = self.name_to_tool[tool_name].invoke(tool_args)
+            tools_used.append(tool_name)
+            scratchpad.append(ToolMessage(content=str(tool_output), tool_call_id=tool_id))
+            
+            if tool_name == "final_answer":
+                self.chat_history.extend([
+                    HumanMessage(content=input),
+                    AIMessage(content=tool_output["answer"], additional_kwargs={"tools_used": tool_output["tools_used"]})
+                ])
+                return tool_output
+            
+            count += 1
+        return {"answer": "Max iterations reached", "tools_used": tools_used}
+
+
+Key: streaming=True on LLM; LCEL supports async/streaming natively.
+
+Async Callback Handler
+Use a callback handler to capture streamed tokens and push them to an async queue for API integration.
+from langchain_core.callbacks import AsyncCallbackHandler
+import asyncio
+from queue import Empty
+from typing import Any
+
+class QueueCallbackHandler(AsyncCallbackHandler):
+    def __init__(self, queue: asyncio.Queue):
+        super().__init__()
+        self.queue = queue
+        self.final_answer_seen = False
+    
+    async def on_llm_new_token(self, token: Any, **kwargs) -> None:
+        tool_calls = kwargs.get("chunk", {}).get("additional_kwargs", {}).get("tool_calls", None)
+        if tool_calls and tool_calls[0].get("name") == "final_answer":
+            self.final_answer_seen = True
+        await self.queue.put(token if self.final_answer_seen else f"Tool call: {token}")
+    
+    async def on_llm_end(self, response: Any, **kwargs) -> None:
+        if self.final_answer_seen:
+            await self.queue.put("done")
+        else:
+            await self.queue.put("step_end")
+    
+    async def __aiter__(self):
+        while True:
+            try:
+                token = await asyncio.wait_for(self.queue.get(), timeout=0.1)
+                if token == "done":
+                    return
+                yield token
+            except Empty:
+                continue
+
+# Test agent streaming
+async def stream_agent(input: str):
+    queue = asyncio.Queue()
+    streamer = QueueCallbackHandler(queue)
+    response = await agent.ainvoke(
+        {"input": input, "chat_history": [], "agent_scratchpad": []},
+        config={"configurable": {"callbacks": [streamer]}}
+    )
+    return response, streamer
+
+# Run
+async def main():
+    response, streamer = await stream_agent("What is 10 + 10?")
+    async for token in streamer:
+        print(token)
+
+asyncio.run(main())
+
+
+Callback Handler:
+on_llm_new_token: Captures each token/chunk; checks for final_answer tool call to toggle final_answer_seen.
+on_llm_end: Sends done for final answer or step_end for tool steps.
+__aiter__: Async generator; yields tokens from queue, waits on empty queue with asyncio.wait_for.
+
+
+Output: Streams AIMessageChunk objects (e.g., tool call: {"name": "add", "arguments": {"x": 10, "y": 10}}).
+Merging chunks: sum(tokens[1:], tokens[0]) combines tool call arguments (e.g., full add call).
+
+
+
+Streaming Agent Executor
+Modify CustomAgentExecutor for streaming.
+class CustomAgentExecutor:
+    # ... (same __init__ as above)
+    
+    async def stream(self, input: str, config: dict = None, verbose: bool = False):
+        scratchpad = []
+        tools_used = []
+        count = 0
+        output = None
+        
+        async for token in self.agent.astream({
+            "input": input,
+            "chat_history": self.chat_history,
+            "agent_scratchpad": scratchpad
+        }, config=config):
+            if output is None:
+                output = token
+            else:
+                output += token
+            
+            if verbose:
+                print(f"Content: {token.content}")
+                tool_calls = token.additional_kwargs.get("tool_calls", None)
+                if tool_calls:
+                    print(f"Tool calls: {tool_calls}")
+                    tool_name = tool_calls[0].get("name")
+                    if tool_name:
+                        print(f"Tool name: {tool_name}")
+                    args = tool_calls[0].get("arguments", {})
+                    if args:
+                        print(f"Tool args: {args}")
+        
+            if not output.tool_calls:
+                continue
+            
+            tool_call = output.tool_calls[0]
+            tool_name = tool_call["name"]
+            tool_args = tool_call["arguments"]
+            tool_id = tool_call["id"]
+            
+            tool_output = self.name_to_tool[tool_name].invoke(tool_args)
+            tools_used.append(tool_name)
+            tool_message = ToolMessage(content=str(tool_output), tool_call_id=tool_id)
+            scratchpad.extend([output, tool_message])
+            
+            if tool_name == "final_answer":
+                self.chat_history.extend([
+                    HumanMessage(content=input),
+                    AIMessage(content=tool_output["answer"], additional_kwargs={"tools_used": tool_output["tools_used"]})
+                ])
+                return tool_output
+            
+            output = None
+            count += 1
+        
+        return {"answer": "Max iterations reached", "tools_used": tools_used}
+
+# Run streaming
+async def main_stream():
+    queue = asyncio.Queue()
+    streamer = QueueCallbackHandler(queue)
+    executor = CustomAgentExecutor(agent=agent, tools=tools)
+    
+    # Async task for executor
+    task = asyncio.create_task(executor.stream(
+        "What is (7.4 * 2) ^ 2 + 5?",
+        config={"configurable": {"callbacks": [streamer]}},
+        verbose=True
+    ))
+    
+    # Stream tokens
+    async for token in streamer:
+        if token == "step_end":
+            print("\n")
+        elif isinstance(token, str) and "Tool call" in token:
+            print(f"Processing: {token}")
+        elif token == "done":
+            break
+        else:
+            print(f"Token: {token.content if hasattr(token, 'content') else token}")
+
+# Run
+asyncio.run(main_stream())
+
+
+Output (example for (7.4 * 2) ^ 2 + 5):
+Processing: Tool call: AIMessageChunk(content="", additional_kwargs={"tool_calls": [{"name": "multiply", ...}]})
+Processing: Tool call: AIMessageChunk(content="", additional_kwargs={"tool_calls": [{"arguments": {"x": 7.4, "y": 2}}]})
+Token: step_end
+(Repeats for exponentiate, add, final_answer)
+Final: {"answer": "224.04", "tools_used": ["multiply", "exponentiate", "add"]}
+
+
+
+Key Insights
+
+Async:
+Use async def, await, and asyncio (e.g., asyncio.sleep, not time.sleep) to avoid blocking.
+Enables concurrent tasks (e.g., streaming while processing).
+
+
+Streaming:
+Streams tokens (AIMessageChunk) and tool calls for real-time feedback.
+QueueCallbackHandler pushes tokens to an async queue for API integration.
+
+
+Agent Streaming:
+Streams intermediate steps (e.g., tool calls, step_end) and final answer.
+final_answer_seen flag distinguishes tool steps from final output.
+
+LCEL:
+Natively supports async (ainvoke, astream) and streaming.
+Simplifies agent integration with callbacks.
+
+Best Practices:
+Use asyncio.Queue for token passing in APIs.
+Process tool calls differently (e.g., display "Calling add tool") for UX.
+Merge chunks carefully to reconstruct tool calls or content.
+
+Conclusion
+Streaming and async in LangChain enable responsive, scalable AI applications. By combining LCEL, async callback handlers, and a custom agent executor, you can stream tokens and tool calls in real-time, ideal for chat interfaces or APIs. This chapter equips you to build production-ready, user-friendly AI systems.
+
