@@ -1,0 +1,364 @@
+# Conversational Memory in LangChain
+
+This chapter explores **conversational memory** in LangChain, a vital component for chatbots and agents to maintain context across interactions. Without memory, responses are limited to the most recent message, making conversations disjointed. We’ll cover four memory types, their original (now deprecated) implementations, and how to rewrite them using the modern `RunnableWithMessageHistory` in LangChain 0.3.
+
+## Overview of Memory Types
+
+1. **Conversation Buffer Memory**  
+   - Simplest type: stores all messages as a list and returns them.  
+   - No filtering or summarization.
+
+2. **Conversation Buffer Window Memory**  
+   - Stores only the most recent `k` messages (defined by a parameter).  
+   - Reduces token usage but may lose earlier context.
+
+3. **Conversation Summary Memory**  
+   - Compresses interactions into a concise summary using an LLM.  
+   - Updates the summary with each new interaction, balancing information retention and token efficiency.
+
+4. **Conversation Summary Buffer Memory**  
+   - Combines buffer and summary: keeps recent messages (up to a token or message limit) and summarizes older ones.  
+   - Maintains high-resolution recent interactions and compressed older context.
+
+## Setup
+- **Environment**: Google Colab, `notebooks/04_chat_memory`.
+- **Install Dependencies**:
+```python
+!pip install langchain langchain-openai langsmith
+
+
+LangSmith optional for tracing; enter API key if used.
+Initialize LLM:
+
+from langchain_openai import ChatOpenAI
+llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
+
+Conversation Buffer Memory
+Original (Deprecated) Implementation
+from langchain.memory import ConversationBufferMemory
+
+memory = ConversationBufferMemory(return_messages=True)  # Required for message objects
+memory.save_context({"input": "Hi, my name is James"}, {"output": "Hi James, I'm Zeta!"})
+memory.save_context({"input": "What's up?"}, {"output": "Not much, how's your day?"})
+
+# Load history
+history = memory.load_memory_variables({})
+print(history["history"])  # Outputs list of HumanMessage and AIMessage objects
+
+
+Alternative: Add messages directly:
+
+memory.add_user_message("Hi, my name is James")
+memory.add_ai_message("Hi James, I'm Zeta!")
+
+
+Invoke with ConversationChain (deprecated):
+
+from langchain.chains import ConversationChain
+chain = ConversationChain(llm=llm, memory=memory)
+response = chain.invoke({"input": "What is my name again?"})
+# Output: "Your name is James."
+
+
+Stores all messages, suitable for high-context-window LLMs but increases token usage.
+
+Modern Implementation (RunnableWithMessageHistory)
+from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+from langchain_core.runnables.history import RunnableWithMessageHistory
+from langchain_community.chat_message_histories import ChatMessageHistory
+
+prompt = ChatPromptTemplate.from_messages([
+    ("system", "You are a helpful assistant named Zeta."),
+    MessagesPlaceholder(variable_name="history"),
+    ("human", "{query}")
+])
+chain = prompt | llm
+
+# Define session history
+chat_map = {}
+def get_session_history(session_id: str):
+    if session_id not in chat_map:
+        chat_map[session_id] = ChatMessageHistory()
+    return chat_map[session_id]
+
+runnable_with_history = RunnableWithMessageHistory(
+    chain,
+    get_session_history,
+    input_messages_key="query",
+    history_messages_key="history"
+)
+
+# Invoke
+response = runnable_with_history.invoke(
+    {"query": "Hi, my name is James"},
+    config={"configurable": {"session_id": "abc123"}}
+)
+response = runnable_with_history.invoke(
+    {"query": "What is my name again?"},
+    config={"configurable": {"session_id": "abc123"}}
+)
+# Output: "Your name is James."
+
+
+Key: MessagesPlaceholder inserts chat history before the query.  
+Session ID: Ensures unique conversation tracking.
+
+Conversation Buffer Window Memory
+Original (Deprecated) Implementation
+from langchain.memory import ConversationBufferWindowMemory
+
+memory = ConversationBufferWindowMemory(k=4, return_messages=True)
+memory.save_context({"input": "Hi, my name is James"}, {"output": "Hi James, I'm Zeta!"})
+# Add more messages...
+chain = ConversationChain(llm=llm, memory=memory)
+response = chain.invoke({"input": "What is my name again?"})
+# Output: "I don't have your name." (if name is outside window)
+
+
+Limits to k messages (e.g., 4), reducing tokens but risking loss of early context (e.g., name).
+
+Modern Implementation
+from langchain_core.chat_history import BaseChatMessageHistory
+from langchain_core.messages import BaseMessage
+
+class BufferWindowMessageHistory(BaseChatMessageHistory):
+    def __init__(self, k: int = 4):
+        self.k = k
+        self.messages = []
+    
+    def add_messages(self, messages: list[BaseMessage]):
+        self.messages.extend(messages)
+        self.messages = self.messages[-self.k:]  # Keep last k messages
+        print(f"Current messages: {[m.content for m in self.messages]}")
+    
+    def clear(self):
+        self.messages = []
+
+def get_session_history(session_id: str):
+    if session_id not in chat_map:
+        chat_map[session_id] = BufferWindowMessageHistory(k=4)
+    return chat_map[session_id]
+
+runnable_with_history = RunnableWithMessageHistory(
+    chain,
+    get_session_history,
+    input_messages_key="query",
+    history_messages_key="history",
+    history_factory_config=[
+        {"key": "session_id", "prompt_key": "session_id"},
+        {"key": "k", "prompt_key": "k"}
+    ]
+)
+
+# Invoke with k=4
+runnable_with_history.invoke(
+    {"query": "Hi, my name is James"},
+    config={"configurable": {"session_id": "abc123", "k": 4}}
+)
+# Add more messages...
+response = runnable_with_history.invoke(
+    {"query": "What is my name again?"},
+    config={"configurable": {"session_id": "abc123", "k": 4}}
+)
+# Output: "I don't have your name." (if name is outside window)
+
+# Try with k=14
+runnable_with_history.invoke(
+    {"query": "What is my name again?"},
+    config={"configurable": {"session_id": "abc456", "k": 14}}
+)
+# Output: "Your name is James." (if name is within window)
+
+
+Custom Class: Limits to k messages, trims older ones.  
+Configurable k: Adjusts window size dynamically.
+
+Conversation Summary Memory
+Original (Deprecated) Implementation
+from langchain.memory import ConversationSummaryMemory
+
+memory = ConversationSummaryMemory(llm=llm, return_messages=True)
+chain = ConversationChain(llm=llm, memory=memory)
+chain.invoke({"input": "Hi, my name is James"})
+# Add more messages...
+response = chain.invoke({"input": "What is my name again?"})
+# Output: "Your name is James." (from summary)
+
+
+Summarizes interactions into a compressed form, reducing tokens for long conversations.
+
+Modern Implementation
+from langchain_core.prompts import SystemMessagePromptTemplate, HumanMessagePromptTemplate
+
+class ConversationSummaryMessageHistory(BaseChatMessageHistory):
+    def __init__(self, llm, k: int = 4):
+        self.llm = llm
+        self.k = k
+        self.messages = []
+    
+    def add_messages(self, messages: list[BaseMessage]):
+        self.messages.extend(messages)
+        if len(self.messages) > self.k:
+            existing_summary = None
+            if self.messages and isinstance(self.messages[0], SystemMessage):
+                existing_summary = self.messages[0].content
+                self.messages.pop(0)
+            
+            old_messages = self.messages[:-self.k]
+            self.messages = self.messages[-self.k:]
+            
+            if old_messages:
+                prompt = ChatPromptTemplate.from_messages([
+                    SystemMessagePromptTemplate.from_template(
+                        "Given the existing conversation summary and new messages, generate a concise summary (max one short paragraph) of the conversation, maintaining relevant information."
+                    ),
+                    HumanMessagePromptTemplate.from_template(
+                        "Existing summary: {existing_summary}\nNew messages: {new_messages}"
+                    )
+                ])
+                new_summary = prompt | self.llm
+                summary_text = new_summary.invoke({
+                    "existing_summary": existing_summary or "None",
+                    "new_messages": "\n".join([m.content for m in old_messages])
+                }).content
+                self.messages.insert(0, SystemMessage(content=summary_text))
+    
+    def clear(self):
+        self.messages = []
+
+def get_session_history(session_id: str):
+    if session_id not in chat_map:
+        chat_map[session_id] = ConversationSummaryMessageHistory(llm=llm, k=4)
+    return chat_map[session_id]
+
+runnable_with_history = RunnableWithMessageHistory(
+    chain,
+    get_session_history,
+    input_messages_key="query",
+    history_messages_key="history",
+    history_factory_config=[
+        {"key": "session_id", "prompt_key": "session_id"},
+        {"key": "llm", "prompt_key": "llm"},
+        {"key": "k", "prompt_key": "k"}
+    ]
+)
+
+# Invoke
+runnable_with_history.invoke(
+    {"query": "Hi, my name is James"},
+    config={"configurable": {"session_id": "abc123", "llm": llm, "k": 4}}
+)
+response = runnable_with_history.invoke(
+    {"query": "What is my name again?"},
+    config={"configurable": {"session_id": "abc123", "llm": llm, "k": 4}}
+)
+# Output: "Your name is James."
+
+
+Summary Process: Compresses older messages into a concise paragraph.  
+Token Efficiency: Saves tokens for long conversations but uses extra tokens for summarization.
+
+Conversation Summary Buffer Memory
+Original (Deprecated) Implementation
+from langchain.memory import ConversationSummaryBufferMemory
+
+memory = ConversationSummaryBufferMemory(llm=llm, max_token_limit=300, return_messages=True)
+chain = ConversationChain(llm=llm, memory=memory)
+chain.invoke({"input": "Hi, my name is James"})
+# Add more messages...
+# Output: Summary + recent messages
+
+
+Keeps recent messages up to a token limit, summarizes older ones.
+
+Modern Implementation
+class ConversationSummaryBufferMessageHistory(BaseChatMessageHistory):
+    def __init__(self, llm, k: int = 4):
+        self.llm = llm
+        self.k = k
+        self.messages = []
+    
+    def add_messages(self, messages: list[BaseMessage]):
+        self.messages.extend(messages)
+        if len(self.messages) > self.k:
+            existing_summary = None
+            if self.messages and isinstance(self.messages[0], SystemMessage):
+                existing_summary = self.messages[0].content
+                self.messages.pop(0)
+            
+            old_messages = self.messages[:-self.k]
+            self.messages = self.messages[-self.k:]
+            
+            if old_messages:
+                prompt = ChatPromptTemplate.from_messages([
+                    SystemMessagePromptTemplate.from_template(
+                        "Given the existing conversation summary and new messages, generate a concise summary (max one short paragraph) of the conversation, maintaining relevant information."
+                    ),
+                    HumanMessagePromptTemplate.from_template(
+                        "Existing summary: {existing_summary}\nNew messages: {new_messages}"
+                    )
+                ])
+                new_summary = prompt | self.llm
+                summary_text = new_summary.invoke({
+                    "existing_summary": existing_summary or "None",
+                    "new_messages": "\n".join([m.content for m in old_messages])
+                }).content
+                print(f"New summary: {summary_text}")
+                self.messages.insert(0, SystemMessage(content=summary_text))
+    
+    def clear(self):
+        self.messages = []
+
+def get_session_history(session_id: str):
+    if session_id not in chat_map:
+        chat_map[session_id] = ConversationSummaryBufferMessageHistory(llm=llm, k=4)
+    return chat_map[session_id]
+
+runnable_with_history = RunnableWithMessageHistory(
+    chain,
+    get_session_history,
+    input_messages_key="query",
+    history_messages_key="history",
+    history_factory_config=[
+        {"key": "session_id", "prompt_key": "session_id"},
+        {"key": "llm", "prompt_key": "llm"},
+        {"key": "k", "prompt_key": "k"}
+    ]
+)
+
+# Invoke
+runnable_with_history.invoke(
+    {"query": "Hi, my name is James"},
+    config={"configurable": {"session_id": "abc123", "llm": llm, "k": 4}}
+)
+response = runnable_with_history.invoke(
+    {"query": "What is my name again?"},
+    config={"configurable": {"session_id": "abc123", "llm": llm, "k": 4}}
+)
+# Output: "Your name is James."
+
+
+Hybrid Approach: Retains recent k messages, summarizes older ones.  
+Customization: Uses message count (k) instead of token limit for simplicity.
+
+Token Usage Insights (via LangSmith)
+
+Buffer Memory: Token count grows with conversation length (e.g., 112 tokens for short interaction, more with longer history).  
+Buffer Window: Limits tokens but may lose context (e.g., forgets name if outside window).  
+Summary: Higher initial token usage for summarization but stabilizes for long conversations.  
+Summary Buffer: Balances recent message retention and summary compression, optimizing token usage.
+
+Conclusion
+
+Conversational Memory: Essential for contextual chatbot interactions.  
+LangChain 0.3: RunnableWithMessageHistory replaces deprecated memory classes, offering flexibility.  
+Key Takeaways:  
+Buffer: Simple, high token usage.  
+Window: Token-efficient but risks context loss.  
+Summary: Compresses history, best for long conversations.  
+Summary Buffer: Hybrid, balances detail and efficiency.
+
+
+Next Steps: Explore advanced LangChain features in the next chapter.
+
+
