@@ -1,0 +1,96 @@
+# Introduction to AI Observability with LangSmith
+
+In this video, we explore **LangSmith**, a component of the broader **LangChain ecosystem**, designed to provide visibility into what large language models (LLMs), agents, and other components are doing. LangSmith is highly recommended for anyone using LangChain or LangGraph, as it simplifies tracking and debugging. Let's dive into how to set it up and use it effectively.
+
+## Setting Up LangSmith
+
+Setting up LangSmith is straightforward. Here's how to get started:
+
+1. **Install Prerequisites**: In your development environment (e.g., Google Colab), install the LangSmith library alongside other LangChain dependencies. The setup remains consistent with previous setups, with LangSmith as an additional library.
+
+2. **Obtain a LangChain API Key**:
+   - Visit [smith.langchain.com](https://smith.langchain.com) to log in or create an account.
+   - Navigate to **Settings** > **API Keys** and create a **Personal Access Token**. You can name or describe it for clarity.
+   - Copy the generated API key and store it securely.
+
+3. **Configure the API Key**:
+   - In your notebook, set the LangChain API key as an environment variable.
+   - Specify a project name for your LangSmith project. For this course, each chapter uses a unique project name, but for personal projects, choose a recognizable and meaningful name.
+
+LangSmith offers a **free tier** for one user, supporting up to 5,000 traces per month. This is sufficient for initial exploration, though you may need to upgrade for larger applications.
+
+## Using LangSmith
+
+Once configured, LangSmith automatically tracks your LLM interactions with minimal setup. Here's an example workflow:
+
+1. **Initialize and Invoke an LLM**:
+   - Set your OpenAI API key (or other LLM provider key) in the environment.
+   - Invoke a simple command, like `hello`, using your LLM.
+   - No changes are needed in your code—LangSmith starts tracking automatically once the API key and environment variables are set.
+
+2. **View Traces in LangSmith**:
+   - Return to the LangSmith dashboard at [smith.langchain.com](https://smith.langchain.com).
+   - Your most recently used project (e.g., "LangChain Course - LangSmith OpenAI") will appear at the top.
+   - Click into the project to see detailed traces, including inputs, outputs, and metadata for each LLM call.
+
+For simple LLM calls, the trace data includes basic input/output details. For more complex scenarios, like agents, LangSmith provides richer insights, such as:
+
+- Multiple LLM calls within an agent workflow.
+- Tool usage traces.
+- Detailed call sequences, making it easier to debug and understand agent behavior.
+
+Enhancing Observability with Traceable Decorators
+
+LangSmith allows you to track custom functions beyond default LLM calls using the **traceable decorator**. Here's how it works:
+
+1. **Define Traceable Functions**:
+   - Import the `traceable` decorator from LangSmith.
+   - Apply it to custom functions, such as generating random numbers, simulating delays, or raising errors.
+
+   ```python
+   from langsmith import traceable
+
+   @traceable
+   def generate_random_number():
+       return random.randint(1, 100)
+
+   @traceable
+   def random_delay():
+       time.sleep(random.uniform(1, 5))
+       return "Completed"
+
+   @traceable
+   def random_error():
+       if random.choice([True, False]):
+           raise ValueError("Random error occurred")
+       return "No error"
+
+Run Functions and Monitor:
+
+Execute these functions multiple times (e.g., in a loop).
+In the LangSmith UI, observe real-time updates for each function's execution, including inputs, outputs, latencies, and errors.
+
+
+Analyze Traces:
+
+Filter traces by specific criteria, such as errors (e.g., ValueError) or function names.
+View detailed tracebacks for errors and latency metrics for performance analysis.
+
+
+Customize Trace Names:
+
+Enhance traceability by assigning descriptive names to the traceable decorator (e.g., @traceable(name="chit_chat_tomaker")).
+Search for these names in the LangSmith UI to quickly locate specific traces.
+
+
+
+Key Benefits of LangSmith
+
+Ease of Setup: Simply set the API key and environment variables to start tracking.
+Rich Insights: Automatically captures detailed information for LLMs and agents, with additional tracing for custom functions.
+Filtering and Debugging: Use filters to isolate errors, specific functions, or performance metrics.
+Optional Dependency: While LangSmith is used throughout the course, it's not mandatory. You can follow along without it, but it’s highly recommended for observability.
+
+Conclusion
+LangSmith is a powerful tool for gaining visibility into your AI workflows with minimal effort. By integrating it into your LangChain projects, you can track, debug, and optimize your applications effectively. In the next chapter, we’ll build on this foundation and explore more advanced features.
+Stay tuned for the next part of the course!
