@@ -1,0 +1,21 @@
+# Capstone: Building a Streaming Chat Application with LangChain
+
+This capstone chapter integrates concepts from previous chapters (agents, LCEL, streaming, async) to build a fully functional, streaming chat application backend using **FastAPI** and LangChain. The application supports conversational agents with tool usage (e.g., SERP API for web searches, math tools), real-time streaming of tokens and tool calls, parallel tool execution, and structured output. While the frontend is provided, we focus on the backend API, leveraging everything learned in the course.
+
+## Overview
+- **Features**:
+  - Conversational agent with chat history.
+  - Streaming of tokens and intermediate tool calls (e.g., "Using SERP API with query: latest news").
+  - Parallel tool execution for queries requiring multiple tools.
+  - Structured output: `{"answer": ..., "tools_used": [...]}`.
+- **Tech Stack**:
+  - **Backend**: FastAPI for async API, LangChain for agent logic, AIOHTTP for async SERP API.
+  - **Frontend**: Provided (Node.js, npm), displays streamed tokens/tool calls.
+  - **Tools**: SERP API (async), math tools (add, multiply, etc.), `final_answer` tool.
+- **Repo**: [Orreellabs/langchain-course](https://github.com/Orreellabs/langchain-course) (clone for setup).
+
+## Setup
+1. **Clone Repository**:
+```bash
+git clone https://github.com/Orreellabs/langchain-course.git
+cd langchain-course
