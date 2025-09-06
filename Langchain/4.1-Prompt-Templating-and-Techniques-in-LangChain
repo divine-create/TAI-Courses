@@ -3,163 +3,109 @@
 In this chapter, we explore prompts in LangChain. While prompts seem simple, they are fundamental to the shift from traditional machine learning (ML) models to large language models (LLMs). In pre-LLM eras, adapting a model for a specific task required fine-tuning with large datasets, which could take days, weeks, or months. With LLMs, we simply adjust the prompt to instruct the model, enabling rapid adaptation across tasks in minutes. LangChain provides tools to build dynamic prompting pipelines that vary based on inputs.
 
 We'll examine prompts through a Retrieval-Augmented Generation (RAG) example, dissecting key components.
-
 ## Key Components of a RAG Prompt
-
 A typical RAG prompt includes:
-
 1. **Rules/Instructions**:
    - Placed in the system prompt.
    - Defines the LLM's behavior, personality, focus, and boundaries.
    - Provides context about the application and objectives, as LLMs lack inherent awareness.
    - Keep concise and fluff-free; over-prompting can dilute effectiveness.
-
 2. **Context**:
    - RAG-specific external information from sources like web searches, databases, or vector stores.
    - Augments the LLM's internal knowledge (stored in model weights).
    - In chat LLMs, placed in user, assistant, or tool messages.
-
 3. **Question**:
    - The user's query, typically as a user message.
    - May include minor formatting or reminders if the LLM deviates from system rules.
-
 4. **Output**:
    - The LLM's response, formatted as an assistant message.
-
 ### Example Prompt Structure
-
 Here's a combined example:
-
 - **System Prompt (Instructions + Context)**: "Answer the question based on the context below. If you cannot answer using the information, respond with 'I don't know'." Followed by the context.
 - **User Message**: The query.
 - **Assistant Message**: Generated response.
-
 Context can be in the system prompt for non-conversational setups or as a tool message in agents for conversational flows.
-
 ## Setting Up in Code
-
 Open the notebook in Google Colab from the LangChain course repo (`notebooks/03_prompts`).
-
 1. **Install Prerequisites**:
    - Include LangChain libraries; LangSmith is optional for tracing.
    - If using LangSmith, enter your API key; otherwise, skip.
-
 ```python
 # Example installation (run in Colab)
 !pip install langchain langchain-openai langsmith
 Basic Prompting:
-
 Use ChatPromptTemplate for chat LLMs
 from langchain_core.prompts import ChatPromptTemplate
-
 prompt = ChatPromptTemplate.from_messages([
     ("system", "Answer the user's query based on the context below:\n\n{context}"),
     ("user", "{query}")
 ])
-
 # Input variables are inferred: 'context' and 'query'
 print(prompt.input_variables)  # Output: ['context', 'query']
 Alternatively, use explicit message templates:
-
 pythonfrom langchain_core.prompts import SystemMessagePromptTemplate, HumanMessagePromptTemplate
-
 prompt = ChatPromptTemplate.from_messages([
     SystemMessagePromptTemplate.from_template("Answer the user's query based on the context below:\n\n{context}"),
     HumanMessagePromptTemplate.from_template("{query}")
 ])
-
 Invoking the LLM:
-
 Use GPT-4o-mini with low temperature (e.g., 0) for determinism and reduced hallucinations in RAG.
-
-
-
 pythonfrom langchain_openai import ChatOpenAI
-
 llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
-
 # Pipeline equivalent to LLMChain
 chain = prompt | llm
-
 context = "Aurelian AI is an AI consultancy that builds AI agents and several open-source frameworks like semantic routers and semantic chunkers. They also have an AI platform and provide development services. They are LangChain experts."
 query = "What does Aurelian AI do?"
-
 response = chain.invoke({"query": query, "context": context})
 print(response.content)
-
 Output: Accurate description based on context.
 For explicitness, map inputs clearly in the invoke call.
-
 Few-Shot Prompting
 Few-shot prompting provides examples to guide the LLM's behavior, especially useful for smaller or less capable models like Llama 2/3. State-of-the-art models like GPT-4o often follow instructions without it, but it helps enforce strict structures.
-
 Setup Examples:
-
 pythonfrom langchain_core.prompts import FewShotChatMessagePromptTemplate
-
 examples = [
     {"input": "Query one", "output": "Answer one"},
     {"input": "Query two", "output": "Answer two"}
 ]
-
 example_prompt = ChatPromptTemplate.from_messages([
     ("human", "{input}"),
     ("ai", "{output}")
 ])
-
 few_shot_prompt = FewShotChatMessagePromptTemplate(
     example_prompt=example_prompt,
     examples=examples
 )
-
 Integrate into Main Prompt:
-
 Dynamically select examples based on user topic (e.g., via keyword or semantic match).
-
-
 final_prompt = ChatPromptTemplate.from_messages([
     ("system", "Answer the user's query based on the context below. Always answer in markdown format with headers, short summaries, and bullet points. Conclude with a bolded summary."),
     few_shot_prompt,
     ("user", "{query}")
 ])
-
 chain = final_prompt | llm
-
 Example: Provides structured output with headers, bullets, and a bolded conclusion.
-
 Few-shot is particularly effective for smaller models to follow patterns.
 Chain of Thought (CoT) Prompting
 CoT encourages step-by-step reasoning, reducing hallucinations and improving accuracy. Similar to showing work in math, it helps diagnose errors.
-
 No specific LangChain object; implemented via prompting.
-
-
 Without CoT (Direct Answer):
-
 prompt = ChatPromptTemplate.from_messages([
     ("system", "Be a helpful assistant. Answer the question directly without any other text or explanation."),
     ("user", "{query}")
 ])
-
 query = "How many keystrokes are needed to type the numbers from 1 to 500?"
 response = (prompt | llm).invoke({"query": query})
 # Output: Incorrect (e.g., 1,511; actual: 1,392)
-
 With CoT:
-
 prompt = ChatPromptTemplate.from_messages([
     ("system", "Be a helpful assistant. To answer the question, list systematically and in precise detail all sub-problems needed. Solve each individually and in sequence. Use everything to provide the final answer."),
     ("user", "{query}")
 ])
-
 # Output: Breaks down into sub-problems (digits 1-9, 10-99, etc.), calculates correctly (1,392).
 
 Default Behavior:
-
 Modern LLMs (e.g., GPT-4o) often use CoT implicitly without explicit instructions, yielding correct results.
-
-
-
 Drawback: Generates more tokens, increasing latency.
 Conclusion
 This chapter covers prompt fundamentals in LangChain, focusing on RAG components, basic/few-shot/CoT techniques, and code implementations. Prompts enable efficient LLM adaptation. In the next chapter, we'll build on this.
